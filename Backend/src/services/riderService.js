@@ -1,7 +1,7 @@
 import Rider from '../models/Rider.js';
 import Order from '../models/Order.js';
 import User from '../models/User.js';
-import { ORDER_STATUS, USER_ROLES } from '../constants/orderconstants.js';
+import { ORDER_STATUS, USER_ROLES } from '../constants/orderConstants.js';
 
 // 1. Toggle Rider Availability (Go ONLINE / OFFLINE)
 export const toggleAvailability = async (userId, isAvailable) => {
@@ -37,7 +37,9 @@ export const reviewRiderApplication = async (riderId, approvalStatus, adminId) =
     if (!rider) throw new Error('Rider application not found.');
 
     rider.approvalStatus = approvalStatus;
-    if (approvalStatus === 'REJECTED') {
+    if (approvalStatus === 'APPROVED') {
+        rider.isAvailable = true;
+    } else if (approvalStatus === 'REJECTED') {
         rider.isAvailable = false;
     }
     await rider.save();
@@ -65,8 +67,8 @@ export const setRiderDeactivationStatus = async (riderId, isDeactivated, reason)
 };
 
 // 4. Validate Assignment Rules before dispatching
-export const validateRiderForAssignment = async (riderId, isAdminOverride = false) => {
-    const rider = await Rider.findById(riderId);
+export const validateRiderForAssignment = async (riderUserId, isAdminOverride = false) => {
+    const rider = await Rider.findOne({ user: riderUserId });
     if (!rider) throw new Error('Rider not found.');
 
     if (rider.approvalStatus !== 'APPROVED') {
@@ -104,7 +106,7 @@ export const acceptAssignedOrder = async (orderId, userId) => {
         throw new Error(`Order is not in assignment phase (Current status: ${order.status}).`);
     }
 
-    if (order.rider.toString() !== rider._id.toString()) {
+    if (order.rider.toString() !== userId.toString()) {
         throw new Error('This order was not assigned to you.');
     }
 
@@ -139,27 +141,24 @@ export const completeOrderDelivery = async (orderId, userId) => {
         throw new Error(`Cannot complete order in current status: ${order.status}.`);
     }
 
-    if (!order.rider || order.rider.toString() !== rider._id.toString()) {
+    if (!order.rider || order.rider.toString() !== userId.toString()) {
         throw new Error('You are not the assigned rider for this order.');
     }
 
-    order.status = ORDER_STATUS.DELIVERED;
-    order.statusHistory.push({
-        status: ORDER_STATUS.DELIVERED,
-        updatedBy: userId,
-        userRole: USER_ROLES.RIDER,
-        reason: 'Order successfully delivered to customer.',
-        timestamp: new Date(),
-    });
-
-    // Free rider capacity
+    // Free rider capacity before status transition (transition validates rider assignment)
     rider.activeOrderCount = 0;
     rider.totalCompletedDeliveries += 1;
-
     await rider.save();
-    await order.save();
 
-    return { order, rider };
+    const { transitionOrderStatus } = await import('./orderService.js');
+    const updatedOrder = await transitionOrderStatus({
+        orderId: order._id,
+        nextStatus: ORDER_STATUS.DELIVERED,
+        user: { _id: userId, role: USER_ROLES.RIDER },
+        reason: 'Order successfully delivered to customer.',
+    });
+
+    return { order: updatedOrder, rider };
 };
 
 // 7. Reject Assigned Order (Rider workflow)
@@ -174,7 +173,7 @@ export const rejectAssignedOrder = async (orderId, userId, rejectionReason) => {
         throw new Error('Order cannot be rejected at its current stage.');
     }
 
-    if (!order.rider || order.rider.toString() !== rider._id.toString()) {
+    if (!order.rider || order.rider.toString() !== userId.toString()) {
         throw new Error('You are not the assigned rider for this order.');
     }
 

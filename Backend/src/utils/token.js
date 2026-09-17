@@ -7,8 +7,11 @@ const ACCESS_SECRET = process.env.JWT_SECRET || 'access_secret_123';
 const REFRESH_SECRET = process.env.REFRESH_SECRET || 'refresh_secret_123';
 
 export const generateAccessToken = (userId, role) => {
-    // Fixed argument order: jwt.sign(payload, secret, options)
-    return jwt.sign({ userId, role }, ACCESS_SECRET, { expiresIn: '10m' });
+    return jwt.sign(
+        { id: userId, role },
+        ACCESS_SECRET,
+        { expiresIn: process.env.ACCESS_TOKEN_EXPIRY || '7d' }
+    );
 };
 
 export const generateRefreshToken = async (userId) => {
@@ -16,14 +19,14 @@ export const generateRefreshToken = async (userId) => {
     const salt = await bcrypt.genSalt(10);
     const tokenHash = await bcrypt.hash(rawRefreshToken, salt);
 
-    const expiredAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await RefreshToken.create({
         user: userId,
         tokenHash,
-        expiredAt,
+        expiresAt,
     });
-    return { rawRefreshToken, expiredAt };
-}
+    return { rawRefreshToken, expiresAt };
+};
 export const sendRefreshTokenCookie = async (res, token) => {
     res.cookie('refreshToken', token, {
         // Prevents XSS attacks (JS cannot read cookie)

@@ -1,6 +1,7 @@
 import Order from '../models/Order.js';
 import User from '../models/User.js';
-import { ORDER_STATUS, USER_ROLES } from '../constants/orderconstants.js';
+import Rider from '../models/Rider.js';
+import { ORDER_STATUS, USER_ROLES } from '../constants/orderConstants.js';
 import { validateStateTransition } from '../utils/orderStateEngine.js';
 import { LedgerService } from './ledgerService.js';
 import { NotificationService } from './notificationService.js';
@@ -41,7 +42,10 @@ export const transitionOrderStatus = async ({ orderId, nextStatus, user, reason,
 
     if ([ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED, ORDER_STATUS.RETURNED].includes(nextStatus)) {
         if (order.rider) {
-            await User.findByIdAndUpdate(order.rider, { isAvailable: true });
+            await Rider.findOneAndUpdate(
+                { user: order.rider },
+                { $set: { isAvailable: true, activeOrderCount: 0 } }
+            );
         }
     }
 
@@ -92,7 +96,10 @@ export const handleRiderRejection = async (orderId, riderId, rejectionReason) =>
         timestamp: new Date(),
     });
 
-    await User.findByIdAndUpdate(riderId, { isAvailable: true });
+    await Rider.findOneAndUpdate(
+        { user: riderId },
+        { $set: { isAvailable: true, activeOrderCount: 0 } }
+    );
     await order.save();
 
     await NotificationService.notifyOrderEvent({
@@ -131,8 +138,16 @@ export const reassignOrder = async (orderId, newRiderId, adminId) => {
         timestamp: new Date(),
     });
 
-    if (oldRiderId) await User.findByIdAndUpdate(oldRiderId, { isAvailable: true });
-    await User.findByIdAndUpdate(newRiderId, { isAvailable: false });
+    if (oldRiderId) {
+        await Rider.findOneAndUpdate(
+            { user: oldRiderId },
+            { $set: { isAvailable: true, activeOrderCount: 0 } }
+        );
+    }
+    await Rider.findOneAndUpdate(
+        { user: newRiderId },
+        { $set: { isAvailable: false, activeOrderCount: 1 } }
+    );
 
     await order.save();
 
@@ -151,7 +166,8 @@ export const handleDeliveryFailure = async (orderId, riderId, failureReason) => 
     const order = await Order.findById(orderId).populate('customer', 'name email');
     if (!order) throw new Error('Order not found');
 
-    const validation = validateStateTransition(order.status, ORDER_STATUS.FAILED, USER_ROLES.RIDER, true);
+    const isAssignedRider = order.rider && order.rider.toString() === riderId.toString();
+    const validation = validateStateTransition(order.status, ORDER_STATUS.FAILED, USER_ROLES.RIDER, isAssignedRider);
     if (!validation.valid) throw new Error(validation.reason);
 
     order.status = ORDER_STATUS.FAILED;
@@ -167,6 +183,8 @@ export const handleDeliveryFailure = async (orderId, riderId, failureReason) => 
 
     if (order.failedDeliveryAttempts >= 3) {
         order.status = ORDER_STATUS.RETURNED;
+        order.pricing.paymentStatus = 'FAILED';
+        order.pricing.codAmountCollected = 0;
         order.statusHistory.push({
             status: ORDER_STATUS.RETURNED,
             updatedBy: riderId,
@@ -174,10 +192,22 @@ export const handleDeliveryFailure = async (orderId, riderId, failureReason) => 
             reason: 'Max delivery attempts (3) exceeded. Parcel marked for return to sender.',
             timestamp: new Date(),
         });
-        await User.findByIdAndUpdate(riderId, { isAvailable: true });
+        await Rider.findOneAndUpdate(
+            { user: riderId },
+            { $set: { isAvailable: true, activeOrderCount: 0 } }
+        );
     }
 
     await order.save();
+
+    if (
+        order.status === ORDER_STATUS.RETURNED &&
+        !order.financialsSettled
+    ) {
+        order.financialsSettled = true;
+        await order.save();
+        await LedgerService.settleOrderFinances(order._id);
+    }
 
     await NotificationService.notifyOrderEvent({
       order,

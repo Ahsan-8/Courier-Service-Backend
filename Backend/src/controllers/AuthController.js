@@ -173,6 +173,9 @@ export const resetPassword = async (req, res) => {
         user.password = newPassword;
         await user.save();
 
+        optRecord.isUsed = true;
+        await optRecord.save();
+
         res.status(200).json({
             success: true,
             message: 'Password reset successful. You can now login with your new password.'

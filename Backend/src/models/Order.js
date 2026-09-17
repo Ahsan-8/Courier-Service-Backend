@@ -115,7 +115,7 @@ const orderSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Pre-save middleware hook: Only recalculate on pricing-relevant field modifications
-orderSchema.pre('save', function (next) {
+orderSchema.pre('save', async function () {
     const isPricingRelevantChange =
         this.isNew ||
         this.isModified('parcel') ||
@@ -126,7 +126,7 @@ orderSchema.pre('save', function (next) {
         this.isModified('pricing.codAmount') ||
         this.isModified('pricing.codAmountCollected');
 
-    if (!isPricingRelevantChange) return next();
+    if (!isPricingRelevantChange) return;
 
     const calculation = PricingEngine.calculate(
         this.parcel,
@@ -149,8 +149,6 @@ orderSchema.pre('save', function (next) {
     this.pricing.returnHandlingFee = calculation.breakdown.returnHandlingFee;
     this.pricing.deliveryFee = calculation.breakdown.totalDeliveryFee;
     this.pricing.netPayableToMerchant = calculation.merchantLedger.netPayableToMerchant;
-
-    next();
 });
 
 export default mongoose.model('Order', orderSchema);

@@ -74,13 +74,11 @@ export const processRiderApplications = async (req, res) => {
 
         if (action === 'APPROVE') {
             rider.approvalStatus = 'APPROVED';
-            rider.isApproved = true;
             rider.isAvailable = true;
             user.isApproved = true;
         } else if (action === 'REJECT') {
             rider.approvalStatus = 'REJECTED';
             rider.rejectionReason = rejectionReason || 'Document did not meet criteria.';
-            rider.isApproved = false;
             rider.isAvailable = false;
             user.isApproved = false;
         }
@@ -102,11 +100,10 @@ export const processRiderApplications = async (req, res) => {
 
 export const getRiderProfile = async (req, res) => {
     try {
-        let rider = await Rider.findOne({ user: req.user._id })
+        const rider = await Rider.findOne({ user: req.user._id })
             .populate('user', 'name email phone role');
         if (!rider) {
-            rider = await Rider.create({ user: req.user._id });
-            rider = await rider.populate('user', 'name email phone role');
+            return res.status(404).json({ message: 'Rider profile not found. Complete rider registration first.' });
         }
         res.json({ success: true, data: rider });
     } catch (error) {
@@ -119,7 +116,7 @@ export const toggleAvailability = async (req, res) => {
         const { isAvailable } = req.body;
         let rider = await Rider.findOne({ user: req.user._id });
         if (!rider) {
-            rider = await Rider.create({ user: req.user._id, isAvailable });
+            return res.status(404).json({ message: 'Rider profile not found.' });
         } else {
             rider.isAvailable = isAvailable !== undefined ? isAvailable : !rider.isAvailable;
             await rider.save();
@@ -142,10 +139,7 @@ export const updateLocation = async (req, res) => {
         }
         let rider = await Rider.findOne({ user: req.user._id });
         if (!rider) {
-            rider = await Rider.create({
-                user: req.user._id,
-                currentLocation: { type: 'Point', coordinates: [longitude, latitude] }
-            });
+            return res.status(404).json({ message: 'Rider profile not found.' });
         } else {
             rider.currentLocation = {
                 type: 'Point',

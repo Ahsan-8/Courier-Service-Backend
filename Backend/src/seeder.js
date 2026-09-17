@@ -138,7 +138,8 @@ const seedData = async () => {
 
       await Order.create({
         customer: randomCustomer._id,
-        rider: status !== 'PENDING' ? randomRiderObj.riderProfile._id : null,
+        trackingId: `TRK${Date.now()}${i}${Math.floor(Math.random() * 1000)}`,
+        rider: status !== 'PENDING' ? randomRiderObj.user._id : null,
         pickupDetails: {
           name: faker.person.fullName(),
           phone: faker.phone.number({ style: 'national' }),

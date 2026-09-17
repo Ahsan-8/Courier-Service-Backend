@@ -7,7 +7,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get('/', getNotifications);
-router.patch('/:id/read', markAsRead);
 router.patch('/read-all', markAllAsRead);
+router.patch('/:id/read', markAsRead);
 
 export default router;

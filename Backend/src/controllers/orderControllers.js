@@ -9,6 +9,16 @@ export const createOrder = async (req, res) => {
     try {
         const { pickupDetails, deliveryDetails, packageDetails, pickupAddress, deliveryAddress, parcel, codAmount, paymentMethod } = req.body;
 
+        if (!pickupDetails?.name || !pickupDetails?.phone || !pickupDetails?.address) {
+            return res.status(400).json({ message: 'pickupDetails (name, phone, address) is required' });
+        }
+        if (!deliveryDetails?.name || !deliveryDetails?.phone || !deliveryDetails?.address) {
+            return res.status(400).json({ message: 'deliveryDetails (name, phone, address) is required' });
+        }
+        if (!packageDetails?.weightKG || !packageDetails?.description) {
+            return res.status(400).json({ message: 'packageDetails (weightKG, description) is required' });
+        }
+
         const trackingId = 'TRk' + Date.now() + Math.floor(Math.random() * 1000);
 
         const order = await Order.create({
@@ -77,6 +87,12 @@ export const getOrderById = async (req, res) => {
         if (req.user.role === 'CUSTOMER' && order.customer._id.toString() !== req.user._id.toString()) {
             return res.status(403).json({ message: "Forbidden: Access denied" });
         }
+        if (
+            req.user.role === 'RIDER' &&
+            (!order.rider || order.rider._id.toString() !== req.user._id.toString())
+        ) {
+            return res.status(403).json({ message: "Forbidden: Access denied" });
+        }
         res.status(200).json({ success: true, data: order });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -103,6 +119,9 @@ export const assignRiderToOrder = async (req, res) => {
         const rider = await User.findById(riderId);
         if (!rider || rider.role !== 'RIDER') {
             return res.status(400).json({ message: "Invalid rider ID or user is not a rider" });
+        }
+        if (!rider.isApproved) {
+            return res.status(400).json({ message: "Cannot assign orders to a rider pending approval" });
         }
 
         const order = await Order.findById(req.params.id);
