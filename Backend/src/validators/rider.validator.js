@@ -7,7 +7,7 @@ const vehicleTypeSchema = z.enum(['BIKE', 'CAR', 'VAN', 'FOOT'], {
 export const applyForRiderSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   email: z.string().email('Invalid email format'),
-  phone: z.string().regex(/^01[3-9]\d{8}$/, 'Invalid Bangladeshi phone number').optional().or(z.literal('')),
+  phone: z.string().regex(/^0[1-9]\d{7,9}$/, 'Invalid Bangladeshi phone number').optional().or(z.literal('')),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   vehicleType: vehicleTypeSchema,
   licenseNumber: z.string().min(1, 'License number is required').max(50),
