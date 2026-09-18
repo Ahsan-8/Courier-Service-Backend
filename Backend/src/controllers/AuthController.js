@@ -21,20 +21,6 @@ export const register = async (req, res) => {
     try {
         const { name, email, phone, password, role } = req.body;
 
-        if (!name || !email || !password) {
-            return res.status(400).json({ message: "Name, email, and password are required" });
-        }
-        if (typeof password !== 'string' || password.length < 6) {
-            return res.status(400).json({ message: "Password must be at least 6 characters" });
-        }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            return res.status(400).json({ message: "Invalid email format" });
-        }
-        if (role && !['CUSTOMER', 'RIDER', 'ADMIN'].includes(role)) {
-            return res.status(400).json({ message: "Invalid role" });
-        }
-
         const userExists = await User.findOne({ $or: [{ email }, { phone }] });
         if (userExists) {
             return res.status(400).json({ message: "User with this email or phone number already exists" });
@@ -69,9 +55,6 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
-        if (!email || !password) {
-            return res.status(400).json({ message: "Email and password are required" });
-        }
         const user = await User.findOne({ email }).select("+password");
         if (!user) {
             return res.status(401).json({ message: "User not found!" });
@@ -117,13 +100,6 @@ export const login = async (req, res) => {
 export const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
-        if (!email) {
-            return res.status(400).json({ message: 'Email is required!' });
-        }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            return res.status(400).json({ message: 'Invalid email format' });
-        }
 
         const user = await User.findOne({ email });
         if (!user) {

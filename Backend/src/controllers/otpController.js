@@ -10,13 +10,6 @@ const RESEND_COOLDOWN_SECONDS = 60;
 export const sendOTP = async (req, res) => {
     try {
         const { email } = req.body;
-        if (!email) {
-            return res.status(400).json({ message: 'Email is required!' });
-        }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            return res.status(400).json({ message: 'Invalid email format' });
-        }
 
         const existingOTP = await OTP.findOne({ identifier: email, isUsed: false }).sort({ createdAt: -1 });
         if (existingOTP) {
@@ -57,13 +50,6 @@ export const sendOTP = async (req, res) => {
 export const verifyOTP = async (req, res) => {
     try {
         const { email, otp } = req.body;
-
-        if (!email || !otp) {
-            return res.status(400).json({ message: 'Email and OTP are required.' });
-        }
-        if (typeof otp !== 'string' || !/^\d{6}$/.test(otp)) {
-            return res.status(400).json({ message: 'OTP must be a 6-digit code.' });
-        }
 
         const optRecord = await OTP.findOne({ identifier: email, isUsed: false }).sort({ createdAt: -1 });
         if (!optRecord) {

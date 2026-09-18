@@ -6,23 +6,6 @@ export const applyForRider = async (req, res) => {
     try {
         const { name, email, phone, password, vehicleType, licenseNumber } = req.body;
 
-        if (!name || !email || !password) {
-            return res.status(400).json({ message: 'Name, email, and password are required' });
-        }
-        if (typeof password !== 'string' || password.length < 6) {
-            return res.status(400).json({ message: 'Password must be at least 6 characters' });
-        }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            return res.status(400).json({ message: 'Invalid email format' });
-        }
-        if (!vehicleType || !['BIKE', 'CAR', 'VAN', 'FOOT'].includes(vehicleType)) {
-            return res.status(400).json({ message: 'Valid vehicleType is required (BIKE, CAR, VAN, FOOT)' });
-        }
-        if (!licenseNumber) {
-            return res.status(400).json({ message: 'License number is required' });
-        }
-
         const userExist = await User.findOne({ $or: [{ email }, { phone }] });
         if (userExist) {
             return res.status(400).json({ message: 'User with this email or phone already exists' })
