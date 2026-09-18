@@ -5,6 +5,7 @@
 - MongoDB + Mongoose ODM
 - JWT + Refresh Token authentication
 - bcryptjs for password hashing
+- **Zod** — Runtime schema validation for request payloads
 - Socket.IO for real-time updates (with Redis adapter for multi-node scaling)
 - Nodemailer for email (SMTP)
 - crypto for OTP generation
@@ -52,7 +53,13 @@ Backend/
 │   ├── middleware/
 │   │   ├── auth.js          # JWT protect middleware
 │   │   ├── role.js          # authorizeRoles() for RBAC
+│   │   ├── validate.middleware.js # Generic Zod schema validation runner
 │   │   └── walletValidation.js # Payout disbursement validation
+│   ├── validators/           # Zod schema definitions per domain
+│   │   ├── auth.validator.js
+│   │   ├── order.validator.js
+│   │   ├── rider.validator.js
+│   │   └── wallet.validator.js
 │   ├── services/
 │   │   ├── emailService.js  # Nodemailer SMTP email sending + lifecycle templates
 │   │   ├── orderService.js  # Order state transitions, rider rejection, reassign, delivery failure
@@ -349,6 +356,29 @@ npm run seed      # seed test data
 - **In-App Inbox**: Every event persists a `Notification` record for historical notification bell view
 - **Resilient**: If Redis is unavailable, `runInline()` persists the notification and sends email directly, so no notification is lost
 
+### Input Validation Layer (`validators/`, `middleware/validate.middleware.js`)
+- **Zod Schema Library**: Declarative runtime schema definitions for all request payloads
+- **Per-Domain Schemas**: `auth.validator.js`, `order.validator.js`, `rider.validator.js`, `wallet.validator.js`
+- **Generic Middleware**: `validate(schema)` is mounted on each route right after authentication
+- **Request Flow**: `Incoming Request → Auth Middleware → Zod Validation → Controller → Business Logic`
+- **Short-Circuiting**: Any validation failure returns immediate `400 Bad Request` with field-level errors; the controller never executes
+- **Data Sanitization**: Controllers receive clean, pre-parsed, type-safe input (strings trimmed, numbers coerced, enums validated)
+- **Standardized Error Format**:
+  ```json
+  {
+    "success": false,
+    "message": "Validation failed",
+    "errors": [
+      { "field": "packageDetails.weightKG", "message": "Weight must be greater than 0" }
+    ]
+  }
+  ```
+- **Validation Rules by Domain**:
+  - **Auth**: Email format (RFC), password ≥ 6 chars, Bangladeshi phone regex (`01X...`), OTP 6-digit
+  - **Order**: weight > 0 and ≤ 100 KG, paymentMethod enum (COD/PREPAID/CARD), required pickup/delivery details
+  - **Rider**: vehicleType enum (BIKE/CAR/VAN/FOOT), GPS bounds (-180..180, -90..90), action/approvalStatus enums
+  - **Wallet**: payout amount > 0, paymentChannel enum (BANK_TRANSFER/BKASH/NAGAD), accountNumber required
+
 ## Bug Fixes & Improvements
 
 ### Critical Fixes (Data Integrity & Security)
@@ -421,18 +451,23 @@ npm run seed      # seed test data
     - No input validation in controller (relies solely on middleware)
     - **Fix**: Added validation with proper error handling
 
+14. **Manual validation checks removed from controllers**
+    - All `if/else` validation in controllers was replaced by Zod schema validation at the route boundary
+    - Controllers now receive clean, pre-sanitized input with guaranteed type safety
+    - **Files affected**: `AuthController.js`, `otpController.js`, `RiderController.js`
+
 ### Medium Priority Fixes (Robustness)
 
-14. **Global error handler missing** (`index.js`)
+15. **Global error handler missing** (`index.js`)
     - No Express error-handling middleware; unhandled errors could crash the process
     - **Fix**: Added global error handler that properly formats Mongoose validation errors, duplicate key errors, and JSON parse errors. Also added `uncaughtException` and `unhandledRejection` handlers.
 
-15. **`orderStateEngine` allowed admin to bypass all state validation** (`orderStateEngine.js`)
+16. **`orderStateEngine` allowed admin to bypass all state validation** (`orderStateEngine.js`)
     - Admin role returned `{ valid: true }` immediately, bypassing terminal state checks
     - This allowed admins to modify already-delivered/cancelled/returned orders
     - **Fix**: Admin now respects terminal state checks; can only transition to valid non-terminal states
 
-16. **Route ordering** (`orderRoute.js`, `notificationRoutes.js`)
+17. **Route ordering** (`orderRoute.js`, `notificationRoutes.js`)
     - Confirmed correct ordering — `/:id/status`, `/:id/reject`, `/:id/failed`, `/:id/reassign`, `/:id/assign` all come before generic `/:id` route
 
 ### Test Results
