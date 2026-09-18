@@ -11,14 +11,13 @@ router.use(protect);
 
 router.post('/', authorizeRoles('CUSTOMER'), createOrder);
 router.get('/', getOrders);
-router.get('/:id', getOrderById);
-router.patch('/:id/assign', authorizeRoles('ADMIN'), assignRiderToOrder);
-router.patch('/:id', authorizeRoles('ADMIN', 'RIDER'), updateOrderStatus);
-
-router.patch('/:id/status', updateStatus);
-
+// More specific routes must come before parameterized routes to avoid conflicts
+router.patch('/:id/status', authorizeRoles('ADMIN', 'RIDER'), updateStatus);
 router.post('/:id/reject', authorizeRoles('RIDER'), rejectAssignment);
 router.post('/:id/failed', authorizeRoles('RIDER'), markFailed);
-
 router.post('/:id/reassign', authorizeRoles('ADMIN'), reassign);
+router.patch('/:id/assign', authorizeRoles('ADMIN'), assignRiderToOrder);
+router.patch('/:id', authorizeRoles('ADMIN', 'RIDER'), updateOrderStatus);
+router.get('/:id', getOrderById);
+
 export default router;

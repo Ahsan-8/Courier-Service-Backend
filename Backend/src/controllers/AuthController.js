@@ -20,6 +20,21 @@ export const generateToken = (user) => {
 export const register = async (req, res) => {
     try {
         const { name, email, phone, password, role } = req.body;
+
+        if (!name || !email || !password) {
+            return res.status(400).json({ message: "Name, email, and password are required" });
+        }
+        if (typeof password !== 'string' || password.length < 6) {
+            return res.status(400).json({ message: "Password must be at least 6 characters" });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ message: "Invalid email format" });
+        }
+        if (role && !['CUSTOMER', 'RIDER', 'ADMIN'].includes(role)) {
+            return res.status(400).json({ message: "Invalid role" });
+        }
+
         const userExists = await User.findOne({ $or: [{ email }, { phone }] });
         if (userExists) {
             return res.status(400).json({ message: "User with this email or phone number already exists" });
@@ -39,6 +54,14 @@ export const register = async (req, res) => {
             },
         });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ message: messages });
+        }
+        if (error.code === 11000) {
+            const field = Object.keys(error.keyValue)[0];
+            return res.status(400).json({ message: `${field} already exists` });
+        }
         res.status(500).json({ message: error.message });
     }
 };
@@ -46,6 +69,9 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ message: "Email and password are required" });
+        }
         const user = await User.findOne({ email }).select("+password");
         if (!user) {
             return res.status(401).json({ message: "User not found!" });
@@ -92,12 +118,16 @@ export const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
         if (!email) {
-            return res.status(403).json({ message: 'Email is required!' });
+            return res.status(400).json({ message: 'Email is required!' });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ message: 'Invalid email format' });
         }
 
         const user = await User.findOne({ email });
         if (!user) {
-            return res.status(403).json({ message: 'No user exist with this email address!' });
+            return res.status(404).json({ message: 'No user exist with this email address!' });
         }
         const existingOTP = await OTP.findOne({ identifier: email, isUsed: false }).sort({ createdAt: -1 });
         if (existingOTP) {
@@ -136,9 +166,11 @@ export const resetPassword = async (req, res) => {
         const { email, otp, newPassword } = req.body;
 
         if (!email || !otp || !newPassword) {
-            return res.status(400).json({ message: 'Email, OTP and New Password all are requred.' });
+            return res.status(400).json({ message: 'Email, OTP and New Password all are required.' });
         }
-
+        if (typeof otp !== 'string' || !/^\d{6}$/.test(otp)) {
+            return res.status(400).json({ message: 'OTP must be a 6-digit code.' });
+        }
         if (newPassword.length < 8) {
             return res.status(400).json({ message: 'New password need to be at least 8 character long.' });
         }
@@ -181,6 +213,10 @@ export const resetPassword = async (req, res) => {
             message: 'Password reset successful. You can now login with your new password.'
         });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ message: messages });
+        }
         res.status(500).json({ message: error.message });
     }
 }
@@ -190,6 +226,9 @@ export const refreshAccessToken = async (req, res) => {
         const incomingRefreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
         if (!incomingRefreshToken) {
             return res.status(401).json({ message: 'Refresh token missing.' });
+        }
+        if (typeof incomingRefreshToken !== 'string' || incomingRefreshToken.length < 10) {
+            return res.status(401).json({ message: 'Invalid refresh token format.' });
         }
 
         // 1. Retrieve all active tokens for hash matching

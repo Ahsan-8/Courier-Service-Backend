@@ -28,6 +28,23 @@ export const disburseMerchantPayout = async (req, res) => {
   try {
     const { merchantId, amount, paymentChannel, accountDetails } = req.body;
 
+    if (!merchantId) {
+      return res.status(400).json({ success: false, message: 'merchantId is required' });
+    }
+    if (!amount || isNaN(amount) || Number(amount) <= 0) {
+      return res.status(400).json({ success: false, message: 'Payout amount must be a number greater than 0' });
+    }
+    const validChannels = ['BANK_TRANSFER', 'BKASH', 'NAGAD'];
+    if (!paymentChannel || !validChannels.includes(paymentChannel)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid paymentChannel. Allowed: ${validChannels.join(', ')}`,
+      });
+    }
+    if (!accountDetails || !accountDetails.accountNumber) {
+      return res.status(400).json({ success: false, message: 'Account details with valid accountNumber are required' });
+    }
+
     const payout = await LedgerService.processPayoutDisbursement({
       merchantId,
       amount: Number(amount),
@@ -38,6 +55,10 @@ export const disburseMerchantPayout = async (req, res) => {
 
     res.json({ success: true, message: 'Payout disbursed successfully', data: payout });
   } catch (error) {
+    if (error.name === 'ValidationError' && error.errors) {
+      const messages = Object.values(error.errors).map(e => e.message).join('. ');
+      return res.status(400).json({ success: false, message: messages });
+    }
     res.status(400).json({ success: false, message: error.message });
   }
 };

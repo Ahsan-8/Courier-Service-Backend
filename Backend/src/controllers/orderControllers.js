@@ -1,9 +1,22 @@
 import Order from '../models/Order.js';
 import User from '../models/User.js';
+import Rider from '../models/Rider.js';
 import { getIO } from '../utils/socket.js';
 import { calculateDeliveryFee } from '../utils/calculateFee.js';
-import * as orderService from '../services/orderService.js'; 
+import * as orderService from '../services/orderService.js';
 import { LedgerService } from '../services/ledgerService.js';
+
+function isMongooseValidationError(error) {
+    return error.name === 'ValidationError' && error.errors && typeof error.errors === 'object';
+}
+
+function extractValidationErrors(error) {
+    const messages = [];
+    for (const key of Object.keys(error.errors || {})) {
+        messages.push(error.errors[key].message || `${key} is required`);
+    }
+    return messages.join('. ');
+}
 
 export const createOrder = async (req, res) => {
     try {
@@ -50,6 +63,9 @@ export const createOrder = async (req, res) => {
         });
         res.status(201).json({ success: true, data: order });
     } catch (error) {
+        if (isMongooseValidationError(error)) {
+            return res.status(400).json({ message: extractValidationErrors(error) });
+        }
         res.status(500).json({ message: error.message });
     }
 };
@@ -63,12 +79,26 @@ export const getOrders = async (req, res) => {
             query.rider = req.user._id;
         }
 
-        const orders = await Order.find(query)
-            .populate('customer', 'email name phone')
-            .populate('rider', 'email name phone')
-            .sort({ createdAt: -1 });
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(100, parseInt(req.query.limit) || 20);
+        const skip = (page - 1) * limit;
 
-        res.status(200).json({ success: true, count: orders.length, data: orders });
+        const [orders, total] = await Promise.all([
+            Order.find(query)
+                .populate('customer', 'email name phone')
+                .populate('rider', 'email name phone')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+            Order.countDocuments(query),
+        ]);
+
+        res.status(200).json({
+            success: true,
+            count: orders.length,
+            data: orders,
+            pagination: { total, page, pages: Math.ceil(total / limit) },
+        });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -116,6 +146,9 @@ export const trackOrder = async (req, res) => {
 export const assignRiderToOrder = async (req, res) => {
     try {
         const { riderId } = req.body;
+        if (!riderId) {
+            return res.status(400).json({ message: "riderId is required" });
+        }
         const rider = await User.findById(riderId);
         if (!rider || rider.role !== 'RIDER') {
             return res.status(400).json({ message: "Invalid rider ID or user is not a rider" });
@@ -129,17 +162,58 @@ export const assignRiderToOrder = async (req, res) => {
             return res.status(404).json({ message: "order not found" });
         }
 
+        if (order.status !== 'PENDING' && order.status !== 'CONFIRMED') {
+            return res.status(400).json({ message: `Cannot assign rider while order is in status: ${order.status}` });
+        }
+
+        // Release previously assigned rider (if any) to free capacity
+        const previousRiderId = order.rider;
+        if (previousRiderId && previousRiderId.toString() !== riderId.toString()) {
+            await Rider.findOneAndUpdate(
+                { user: previousRiderId },
+                { $set: { isAvailable: true, activeOrderCount: 0 } }
+            );
+        }
+
+        // Reserve new rider capacity
+        const riderProfile = await Rider.findOne({ user: riderId });
+        if (!riderProfile) {
+            return res.status(400).json({ message: "Rider profile not found" });
+        }
+        if (riderProfile.isDeactivated) {
+            return res.status(400).json({ message: "Cannot assign orders to a deactivated/suspended rider" });
+        }
+        if (riderProfile.activeOrderCount >= 1) {
+            return res.status(400).json({ message: "Rider already has an active order in progress" });
+        }
+        if (!riderProfile.isAvailable) {
+            return res.status(400).json({ message: "Rider is currently offline" });
+        }
+
+        // Reserve new rider capacity — assignment reserves the rider, but the
+        // activeOrderCount is only consumed when the rider actually accepts the order.
+        // We set isAvailable=false to prevent dispatching other orders to this rider.
+        await Rider.findOneAndUpdate(
+            { user: riderId },
+            { $set: { isAvailable: false } }
+        );
+
         order.rider = riderId;
         order.status = 'RIDER_ASSIGNED';
         order.statusHistory.push({
             status: 'RIDER_ASSIGNED',
             updatedAt: new Date(),
             updatedBy: req.user._id,
+            userRole: req.user.role,
         });
 
         await order.save();
         res.status(200).json({ success: true, data: order });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ message: messages });
+        }
         res.status(500).json({ message: error.message });
     }
 }
@@ -155,7 +229,9 @@ export const updateOrderStatus = async (req, res) => {
         order.status = status;
         order.statusHistory.push({
             status,
+            updatedAt: new Date(),
             updatedBy: req.user._id,
+            userRole: req.user.role,
         });
 
         if (status === 'DELIVERED' && order.pricing.paymentMethod === 'COD') {
@@ -166,25 +242,33 @@ export const updateOrderStatus = async (req, res) => {
         }
         await order.save();
 
-        // Settle finances onto merchant ledger exactly once per order lifecycle
+        // Settle finances onto merchant ledger exactly once per order lifecycle.
+        // IMPORTANT: Run ledger settlement FIRST, then mark settled. If settlement
+        // throws, the order remains unmarked so a retry can re-attempt safely.
         if (
           (status === 'DELIVERED' || status === 'RETURNED') &&
           !order.financialsSettled
         ) {
+          await LedgerService.settleOrderFinances(order._id);
           order.financialsSettled = true;
           await order.save();
-          await LedgerService.settleOrderFinances(order._id);
         }
 
         const io = getIO();
-        io.to(`order_${order._id}`).emit(`order_status_updated`, {
-            orderId: order._id,
-            status: order.status,
-            updated: new Date(),
-        });
+        if (io) {
+          io.to(`order_${order._id}`).emit(`order_status_updated`, {
+              orderId: order._id,
+              status: order.status,
+              updated: new Date(),
+          });
+        }
 
         res.status(200).json({ success: true, data: order });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ message: messages });
+        }
         res.status(500).json({ message: error.message });
     }
 }

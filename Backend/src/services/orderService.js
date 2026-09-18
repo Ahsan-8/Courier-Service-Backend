@@ -51,14 +51,16 @@ export const transitionOrderStatus = async ({ orderId, nextStatus, user, reason,
 
     await order.save();
 
-    // Settle finances onto merchant ledger exactly once per order lifecycle
+    // Settle finances onto merchant ledger exactly once per order lifecycle.
+    // IMPORTANT: Run ledger settlement FIRST, then mark settled. If settlement
+    // throws, the order remains unmarked so a retry can re-attempt safely.
     if (
       (nextStatus === ORDER_STATUS.DELIVERED || nextStatus === ORDER_STATUS.RETURNED) &&
       !order.financialsSettled
     ) {
+      await LedgerService.settleOrderFinances(order._id);
       order.financialsSettled = true;
       await order.save();
-      await LedgerService.settleOrderFinances(order._id);
     }
 
     // Dispatch Email + Socket Notifications (non-blocking via queue)
@@ -204,9 +206,9 @@ export const handleDeliveryFailure = async (orderId, riderId, failureReason) => 
         order.status === ORDER_STATUS.RETURNED &&
         !order.financialsSettled
     ) {
-        order.financialsSettled = true;
-        await order.save();
-        await LedgerService.settleOrderFinances(order._id);
+      await LedgerService.settleOrderFinances(order._id);
+      order.financialsSettled = true;
+      await order.save();
     }
 
     await NotificationService.notifyOrderEvent({

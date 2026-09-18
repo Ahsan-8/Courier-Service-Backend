@@ -108,6 +108,35 @@ app.get("/", (req, res) => {
     res.json({ message: 'Courier API & Real-Time Socket Service running...' });
 });
 
+// Global error handler - catches unhandled errors from all middleware/routes
+app.use((error, req, res, next) => {
+    console.error('[Global Error Handler]:', error.message);
+    if (error.name === 'ValidationError' && error.errors) {
+        const messages = Object.values(error.errors).map(e => e.message).join('. ');
+        return res.status(400).json({ success: false, message: messages });
+    }
+    if (error.code === 11000) {
+        const field = Object.keys(error.keyValue)[0];
+        return res.status(400).json({ success: false, message: `${field} already exists` });
+    }
+    if (error instanceof SyntaxError && error.status === 400) {
+        return res.status(400).json({ success: false, message: 'Invalid JSON body' });
+    }
+    const status = error.status || error.statusCode || 500;
+    res.status(status).json({ success: false, message: error.message || 'Internal server error' });
+});
+
+// Handle uncaught exceptions to prevent silent crashes
+process.on('uncaughtException', (err) => {
+    console.error('[Uncaught Exception]:', err.message);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Unhandled Rejection]:', reason);
+    process.exit(1);
+});
+
 // Start background notification worker only if Redis is confirmed available.
 // If Redis is missing, NotificationService.runInline() handles notifications directly.
 if (redisAdapterEnabled) {

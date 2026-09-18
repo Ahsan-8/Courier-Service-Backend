@@ -11,7 +11,11 @@ export const sendOTP = async (req, res) => {
     try {
         const { email } = req.body;
         if (!email) {
-            return res.status(403).json({ message: 'Email is required!' });
+            return res.status(400).json({ message: 'Email is required!' });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ message: 'Invalid email format' });
         }
 
         const existingOTP = await OTP.findOne({ identifier: email, isUsed: false }).sort({ createdAt: -1 });
@@ -39,9 +43,13 @@ export const sendOTP = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: `Password resend OTP sent to ${email}.`,
+            message: `OTP sent to ${email}.`,
         });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ message: messages });
+        }
         res.status(500).json({ message: error.message });
     }
 };
@@ -52,6 +60,9 @@ export const verifyOTP = async (req, res) => {
 
         if (!email || !otp) {
             return res.status(400).json({ message: 'Email and OTP are required.' });
+        }
+        if (typeof otp !== 'string' || !/^\d{6}$/.test(otp)) {
+            return res.status(400).json({ message: 'OTP must be a 6-digit code.' });
         }
 
         const optRecord = await OTP.findOne({ identifier: email, isUsed: false }).sort({ createdAt: -1 });
@@ -86,6 +97,10 @@ export const verifyOTP = async (req, res) => {
             message: 'OTP verified successfully.',
         });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ message: messages });
+        }
         res.status(500).json({ message: error.message });
     }
 };

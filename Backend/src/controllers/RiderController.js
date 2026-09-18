@@ -6,6 +6,23 @@ export const applyForRider = async (req, res) => {
     try {
         const { name, email, phone, password, vehicleType, licenseNumber } = req.body;
 
+        if (!name || !email || !password) {
+            return res.status(400).json({ message: 'Name, email, and password are required' });
+        }
+        if (typeof password !== 'string' || password.length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters' });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ message: 'Invalid email format' });
+        }
+        if (!vehicleType || !['BIKE', 'CAR', 'VAN', 'FOOT'].includes(vehicleType)) {
+            return res.status(400).json({ message: 'Valid vehicleType is required (BIKE, CAR, VAN, FOOT)' });
+        }
+        if (!licenseNumber) {
+            return res.status(400).json({ message: 'License number is required' });
+        }
+
         const userExist = await User.findOne({ $or: [{ email }, { phone }] });
         if (userExist) {
             return res.status(400).json({ message: 'User with this email or phone already exists' })
@@ -38,6 +55,14 @@ export const applyForRider = async (req, res) => {
         });
 
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ message: messages });
+        }
+        if (error.code === 11000) {
+            const field = Object.keys(error.keyValue)[0];
+            return res.status(400).json({ message: `${field} already exists` });
+        }
         res.status(500).json({ message: error.message });
     }
 }
@@ -58,7 +83,7 @@ export const processRiderApplications = async (req, res) => {
     try {
         const { action, rejectionReason } = req.body;
 
-        if (!['APPROVE', 'REJECT'].includes(action)) {
+        if (!action || !['APPROVE', 'REJECT'].includes(action)) {
             return res.status(400).json({ message: 'Action must be APPROVE or REJECT' });
         }
 
@@ -94,6 +119,10 @@ export const processRiderApplications = async (req, res) => {
             }
         });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ message: messages });
+        }
         res.status(500).json({ message: error.message });
     }
 }
@@ -135,7 +164,10 @@ export const updateLocation = async (req, res) => {
     try {
         const { longitude, latitude } = req.body;
         if (longitude === undefined || latitude === undefined) {
-            return res.status(404).json({ message: 'Longitude and latitude are required' });
+            return res.status(400).json({ message: 'Longitude and latitude are required' });
+        }
+        if (isNaN(Number(longitude)) || isNaN(Number(latitude))) {
+            return res.status(400).json({ message: 'Longitude and latitude must be valid numbers' });
         }
         let rider = await Rider.findOne({ user: req.user._id });
         if (!rider) {
@@ -143,7 +175,7 @@ export const updateLocation = async (req, res) => {
         } else {
             rider.currentLocation = {
                 type: 'Point',
-                coordinates: [longitude, latitude],
+                coordinates: [Number(longitude), Number(latitude)],
             };
             await rider.save();
         }
@@ -153,6 +185,10 @@ export const updateLocation = async (req, res) => {
             data: rider.currentLocation
         });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ message: messages });
+        }
         res.status(500).json({ message: error.message });
     }
 }
@@ -185,6 +221,9 @@ export const NearByRiders = async (req, res) => {
 export const toggleOnlineStatus = async (req, res) => {
     try {
         const { isAvailable } = req.body;
+        if (isAvailable !== undefined && typeof isAvailable !== 'boolean') {
+            return res.status(400).json({ success: false, message: 'isAvailable must be a boolean' });
+        }
         const rider = await riderService.toggleAvailability(req.user._id, isAvailable);
         res.json({
             success: true,
@@ -192,6 +231,10 @@ export const toggleOnlineStatus = async (req, res) => {
             data: rider,
         });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ success: false, message: messages });
+        }
         res.status(400).json({ success: false, message: error.message });
     }
 };
@@ -200,10 +243,17 @@ export const toggleOnlineStatus = async (req, res) => {
 // @route   PATCH /api/riders/:id/review
 export const reviewApplication = async (req, res) => {
     try {
-        const { approvalStatus } = req.body; // 'APPROVED' or 'REJECTED'
+        const { approvalStatus } = req.body;
+        if (!approvalStatus || !['APPROVED', 'REJECTED'].includes(approvalStatus)) {
+            return res.status(400).json({ success: false, message: 'approvalStatus must be APPROVED or REJECTED' });
+        }
         const rider = await riderService.reviewRiderApplication(req.params.id, approvalStatus, req.user._id);
         res.json({ success: true, message: `Application updated to ${approvalStatus}.`, data: rider });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ success: false, message: messages });
+        }
         res.status(400).json({ success: false, message: error.message });
     }
 };
@@ -213,6 +263,9 @@ export const reviewApplication = async (req, res) => {
 export const deactivateRider = async (req, res) => {
     try {
         const { isDeactivated, reason } = req.body;
+        if (isDeactivated === undefined || typeof isDeactivated !== 'boolean') {
+            return res.status(400).json({ success: false, message: 'isDeactivated must be a boolean' });
+        }
         const rider = await riderService.setRiderDeactivationStatus(req.params.id, isDeactivated, reason);
         res.json({
             success: true,
@@ -220,6 +273,10 @@ export const deactivateRider = async (req, res) => {
             data: rider,
         });
     } catch (error) {
+        if (error.name === 'ValidationError' && error.errors) {
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ success: false, message: messages });
+        }
         res.status(400).json({ success: false, message: error.message });
     }
 };

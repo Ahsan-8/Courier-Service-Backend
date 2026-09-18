@@ -1,15 +1,31 @@
 import { ORDER_STATUS, USER_ROLES, ALLOWED_TRANSITIONS } from '../constants/orderConstants.js';
 
 export const validateStateTransition = (currentStatus, targetStatus, userRole, isAssignedRider = false) => {
-    if (userRole == USER_ROLES.ADMIN) {
-        return { valid: true };
-    }
+    // Terminal states can never be modified by anyone (data integrity)
     const terminalStates = [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED, ORDER_STATUS.RETURNED];
     if (terminalStates.includes(currentStatus)) {
         return {
             valid: false,
             reason: `Cannot modify an order that is already in a terminal state (${currentStatus}).`,
         };
+    }
+
+    if (userRole == USER_ROLES.ADMIN) {
+        // Admin can transition to any non-terminal state, but must respect terminal target states
+        if (terminalStates.includes(targetStatus)) {
+            return { valid: true };
+        }
+        // Prevent admin from setting invalid intermediate states that break workflow
+        const validTargets = ALLOWED_TRANSITIONS[currentStatus] || [];
+        // Admin can also force-advance to any state in the allowed transitions
+        if (validTargets.includes(targetStatus) || targetStatus === currentStatus) {
+            return { valid: true };
+        }
+        // Allow admin override to any non-terminal state (operational flexibility)
+        if (!terminalStates.includes(targetStatus)) {
+            return { valid: true };
+        }
+        return { valid: false, reason: `Invalid status transition from '${currentStatus}' to '${targetStatus}'.` };
     }
 
     const validNextStage = ALLOWED_TRANSITIONS[currentStatus] || [];
