@@ -34,7 +34,7 @@ export const validate = (schema) => {
 
     // Replace with parsed/sanitized values
     if (isQuerySchema) {
-      req.query = result.data;
+      Object.assign(req.query, result.data);
     } else {
       req.body = result.data;
     }

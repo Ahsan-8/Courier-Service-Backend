@@ -125,6 +125,9 @@ export const getOrderById = async (req, res) => {
         }
         res.status(200).json({ success: true, data: order });
     } catch (error) {
+        if (error.name === 'CastError') {
+            return res.status(404).json({ message: "Order not found" });
+        }
         res.status(500).json({ message: error.message });
     }
 }

@@ -112,7 +112,7 @@ export const processRiderApplications = async (req, res) => {
 
 export const getRiderProfile = async (req, res) => {
     try {
-        const rider = await Rider.findOne({ user: req.user._id })
+        const rider = await Rider.findOne({ user: req.user._id || req.user.id })
             .populate('user', 'name email phone role');
         if (!rider) {
             return res.status(404).json({ message: 'Rider profile not found. Complete rider registration first.' });
@@ -125,18 +125,16 @@ export const getRiderProfile = async (req, res) => {
 
 export const toggleAvailability = async (req, res) => {
     try {
-        const { isAvailable } = req.body;
-        let rider = await Rider.findOne({ user: req.user._id });
+        const { isAvailable } = req.body || {};
+        const rider = await Rider.findOne({ user: req.user._id || req.user.id });
         if (!rider) {
             return res.status(404).json({ message: 'Rider profile not found.' });
-        } else {
-            rider.isAvailable = isAvailable !== undefined ? isAvailable : !rider.isAvailable;
-            await rider.save();
         }
+        const updatedRider = await riderService.toggleAvailability(req.user._id, isAvailable !== undefined ? isAvailable : !rider.isAvailable);
         res.json({
             success: true,
-            message: `Rider is now ${rider.isAvailable ? 'Online' : 'Offline'}`,
-            data: rider,
+            message: `Rider is now ${updatedRider.isAvailable ? 'Online' : 'Offline'}`,
+            data: updatedRider,
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -203,7 +201,7 @@ export const NearByRiders = async (req, res) => {
 // @route   PATCH /api/riders/toggle-online
 export const toggleOnlineStatus = async (req, res) => {
     try {
-        const { isAvailable } = req.body;
+        const { isAvailable } = req.body || {};
         if (isAvailable !== undefined && typeof isAvailable !== 'boolean') {
             return res.status(400).json({ success: false, message: 'isAvailable must be a boolean' });
         }

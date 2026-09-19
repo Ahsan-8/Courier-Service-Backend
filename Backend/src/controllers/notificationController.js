@@ -43,6 +43,9 @@ export const markAsRead = async (req, res) => {
     await notification.save();
     res.json({ success: true, data: notification });
   } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(404).json({ success: false, message: 'Notification not found' });
+    }
     res.status(500).json({ success: false, message: error.message });
   }
 };

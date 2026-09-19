@@ -34,7 +34,7 @@ router.post('/apply', validate(applyForRiderSchema), applyForRider);
 router.use(protect);
 // Rider self-management
 router.get('/profile', authorizeRoles('RIDER'), getRiderProfile);
-router.patch('/availability', authorizeRoles('RIDER'), toggleAvailability);
+router.patch('/availability', authorizeRoles('RIDER'), validate(toggleOnlineSchema), toggleAvailability);
 router.patch('/toggle-online', authorizeRoles('RIDER'), validate(toggleOnlineSchema), toggleOnlineStatus);
 router.patch('/location', authorizeRoles('RIDER'), validate(updateLocationSchema), updateLocation);
 router.get('/stats', authorizeRoles('RIDER'), getRiderStats);

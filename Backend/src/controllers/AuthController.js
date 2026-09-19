@@ -28,6 +28,8 @@ export const register = async (req, res) => {
         const user = await User.create({ name, email, phone, password, role: role || "CUSTOMER" });
 
         const token = generateToken(user);
+        const { rawRefreshToken } = await generateRefreshToken(user._id);
+        sendRefreshTokenCookie(res, rawRefreshToken);
         res.status(201).json({
             success: true,
             data: {
@@ -80,6 +82,8 @@ export const login = async (req, res) => {
 
 
         const token = generateToken(user);
+        const { rawRefreshToken } = await generateRefreshToken(user._id);
+        sendRefreshTokenCookie(res, rawRefreshToken);
 
         res.status(200).json({
             success: true,

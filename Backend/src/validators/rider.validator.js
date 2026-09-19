@@ -33,7 +33,7 @@ export const deactivateSchema = z.object({
 
 export const toggleOnlineSchema = z.object({
   isAvailable: z.boolean('isAvailable must be a boolean').optional(),
-});
+}).optional();
 
 export const updateLocationSchema = z.object({
   longitude: z.number().min(-180, 'Longitude must be between -180 and 180').max(180, 'Longitude must be between -180 and 180'),
