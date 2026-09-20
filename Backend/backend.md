@@ -319,6 +319,95 @@ npm start         # production
 npm run seed      # seed test data
 ```
 
+## Pricing Standards & Delivery Zones
+
+### Delivery Zones (4 Types)
+
+The system resolves delivery routes based on pickup and delivery districts:
+
+| Zone | Condition | Base Price | Same-Day Price |
+|------|-----------|-----------|----------------|
+| **INSIDE_DHAKA** | Both pickup and delivery within Dhaka City | 55 BDT | 105 BDT |
+| **DHAKA_SUBURBAN** | Dhaka City to suburban districts (Savar, Gazipur, Narayanganj, Keraniganj, Dhamrai) | 105 BDT | 105 BDT |
+| **OUTSIDE_DHAKA** | Either origin or destination is Dhaka (outstation to/from Dhaka) | 115 BDT | Not available |
+| **DISTRICT_TO_DISTRICT** | Non-Dhaka to Non-Dhaka (cross-country inter-district) | 135 BDT | Not available |
+
+### Delivery Speed Options
+
+| Speed | Description | Available In |
+|-------|-------------|-------------|
+| **Standard** | Regular delivery based on zone distance | All zones |
+| **Same-Day** | Expedited delivery within the same calendar day | INSIDE_DHAKA, DHAKA_SUBURBAN only |
+
+### Pricing Formula
+
+```
+Total Delivery Fee = Base Fee + Weight Surcharge + COD Fee + Return Handling Fee
+```
+
+- **Base Fee**: Determined by zone and delivery speed (see table above)
+- **Weight Surcharge**: 20 BDT per KG over the 1.0 KG base weight limit
+- **COD Fee**: 1% of collected cash (Cash on Delivery commission)
+- **Return Handling Fee**: 50% of base fee (applied only on RETURNED orders)
+
+### Volumetric Weight
+
+For parcels with dimensions, the system uses the greater of:
+- **Actual weight** (KG)
+- **Volumetric weight** = (Length × Width × Height) / 5000
+
+Minimum billable weight floor is **0.1 KG** to prevent zero-weight manifests.
+
+### Package Categories
+
+| Category | Surcharge |
+|----------|-----------|
+| DOCUMENTS | +20 BDT |
+| FRAGILE | +150 BDT |
+| ELECTRONICS | +30 BDT |
+| CLOTHING | +10 BDT |
+| HEAVY | +100 BDT |
+| PARCEL | +15 BDT |
+
+### Lifecycle Financials
+
+| Order Status | Financial Impact |
+|-------------|-----------------|
+| **DELIVERED** | Collects COD + deducts delivery fee |
+| **PARTIAL_DELIVERY** | Collects partial COD only |
+| **RETURNED** | 50% RTO handling fee; COD collected = 0 |
+| **CANCELLED** | No financial settlement |
+
+The ledger allows **negative `netPayableToMerchant`** to correctly track merchant debt on returns.
+
+### Parcel Delivery Locations
+
+Each order specifies pickup and delivery locations with two address levels:
+
+```javascript
+pickupAddress: {
+  district: String,   // e.g., "Dhaka", "Chittagong", "Savar"
+  area: String,       // e.g., "Gulshan", "Banani", "Motijheel"
+},
+deliveryAddress: {
+  district: String,
+  area: String,
+},
+```
+
+**District Resolution Logic** (`resolveZone()`):
+1. Both endpoints in Dhaka City → **INSIDE_DHAKA**
+2. Dhaka City to suburban district → **DHAKA_SUBURBAN**
+3. Either endpoint is Dhaka (outstation) → **OUTSIDE_DHAKA**
+4. Non-Dhaka to Non-Dhaka → **DISTRICT_TO_DISTRICT**
+
+**Suburban Districts**: Savar, Gazipur, Narayanganj, Keraniganj, Dhamrai
+
+**Additional Address Details**:
+- `pickupDetails.address` / `deliveryDetails.address` — Full street-level address
+- `pickupDetails.name` / `deliveryDetails.name` — Contact person name
+- `pickupDetails.phone` / `deliveryDetails.phone` — Contact phone (Bangladeshi format: 01X...)
+
 ## Notes
 - In development mode (`NODE_ENV=development`), emails are logged to console instead of sent
 - OTP expiry, resend cooldown, and max attempts are enforced
